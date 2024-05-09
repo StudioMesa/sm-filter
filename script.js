@@ -1,3 +1,5 @@
+/*SM Filter — Updated 5/9/24*/
+
 document.addEventListener('DOMContentLoaded', function() {
     const grid = document.querySelector('.sqs-gallery-design-autogrid');
     imagesLoaded(grid, function() {
