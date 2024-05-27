@@ -1,0 +1,16 @@
+name: Purge jsDelivr Cache
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  purgeCache:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Purge jsDelivr Cache
+        if: always()
+        run: |
+          curl -X POST "https://purge.jsdelivr.net/gh/StudioMesa/sm-filter/script.js"
