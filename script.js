@@ -16,7 +16,7 @@ itemSelector: '.blog-basic-grid--container',
 layoutMode: 'masonry',
 masonry: {
 columnWidth: '.blog-basic-grid--container',
-gutter: 50
+gutter: 20
 },
 getSortData: {
 name: function(itemElem) {
