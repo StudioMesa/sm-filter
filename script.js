@@ -1,4 +1,4 @@
-/*SM Filter — Updated 5/27/24*/
+/*SM Filter — Updated 10/30/24*/
 
 document.addEventListener("DOMContentLoaded", function() {
     // Dynamically create filter buttons based on archive links
@@ -16,10 +16,17 @@ document.addEventListener("DOMContentLoaded", function() {
 
     // Initialize data attributes on items
     document.querySelectorAll('.blog-basic-grid--container').forEach(item => {
+      // Collect all categories for the item
+      const categories = [];
       item.querySelectorAll('.blog-categories-list a').forEach(categoryElement => {
-        const category = categoryElement.textContent.trim().replace(/\s+/g, '-').toLowerCase().replace(/[^a-z0-9-_]/g, '');
-        item.setAttribute('data-category', category);
+        const category = categoryElement.textContent.trim()
+          .replace(/\s+/g, '-')
+          .toLowerCase()
+          .replace(/[^a-z0-9-_]/g, '');
+        categories.push(category);
       });
+      // Set data-category attribute with all categories
+      item.setAttribute('data-category', categories.join(' '));
 
       // Assuming there's a title element with a class of 'blog-title'
       const titleElement = item.querySelector('.blog-title');
@@ -140,4 +147,4 @@ document.addEventListener("DOMContentLoaded", function() {
         select.querySelector('.filter-select').style.display = 'none';
       }
     });
-  });
+});
