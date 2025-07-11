@@ -1,183 +1,137 @@
-/*SM Filter — Updated 04/07/25*/
+/*SM Filter — Updated 07/11/25*/
 
-document.addEventListener("DOMContentLoaded", function() {
-  // Create filter buttons from archive links
-  var archiveLinks = document.querySelectorAll('.archive-block-wrapper .archive-group-name-link');
-  var buttonWrap = document.getElementById('button-wrap');
-  archiveLinks.forEach(function(link) {
-    var text = link.textContent.trim();
-    if (text) {
-      var button = document.createElement('div');
-      button.className = 'filter-button';
-      button.textContent = text;
-      buttonWrap.appendChild(button);
-    }
-  });
+document.addEventListener("DOMContentLoaded", function () {
+  window.addEventListener("load", function () {
+    const getSlug = str =>
+      str.trim().replace(/\s+/g, '-').toLowerCase().replace(/[^a-z0-9-_]/g, '');
 
-  // Get all blog items
-  var blogItems = document.querySelectorAll('.blog-item');
-  if (!blogItems.length) {
-    console.warn("No blog items found with class '.blog-item'.");
-    return;
-  }
+    const buttonWrap = document.getElementById('button-wrap');
+    const archiveLinks = document.querySelectorAll('.archive-block-wrapper .archive-group-name-link');
+    const selectWrap = document.getElementById('filter-select-wrap');
+    const trigger = selectWrap?.querySelector('.select-trigger');
+    const options = selectWrap?.querySelectorAll('.option');
 
-  // Determine the container using the parent of the first blog item,
-  // unless a container with class .blog-side-by-side-wrapper exists.
-  var container = blogItems[0].parentElement;
-  var wrapper = document.querySelector('.blog-side-by-side-wrapper');
-  if (wrapper) {
-    container = wrapper;
-  }
-
-  // Initialize data attributes for each blog item
-  blogItems.forEach(function(item) {
-    // Categories
-    var categories = [];
-    var catElements = item.querySelectorAll('.blog-categories-list a');
-    catElements.forEach(function(catElem) {
-      var catText = catElem.textContent.trim();
-      if (catText) {
-        var category = catText.replace(/\s+/g, '-').toLowerCase().replace(/[^a-z0-9-_]/g, '');
-        categories.push(category);
+    // Create filter buttons
+    archiveLinks.forEach(link => {
+      const text = link.textContent.trim();
+      if (text) {
+        const button = document.createElement('div');
+        button.className = 'filter-button';
+        button.textContent = text;
+        button.setAttribute('data-filter', getSlug(text));
+        buttonWrap.appendChild(button);
       }
     });
-    item.setAttribute('data-category', categories.join(' '));
 
-    // Title
-    var titleElement = item.querySelector('.blog-title');
-    if (titleElement) {
-      var title = titleElement.textContent.trim();
-      item.setAttribute('data-name', title);
-    } else {
-      console.warn('Missing .blog-title element for item:', item);
-    }
+    const blogItems = document.querySelectorAll('.blog-item');
+    if (!blogItems.length) return;
 
-    // Date - use datetime attribute if available, else the text content
-    var timeElement = item.querySelector('time[pubdate]');
-    if (timeElement) {
-      var dateValue = timeElement.getAttribute('datetime') || timeElement.textContent.trim();
-      var date = new Date(dateValue);
-      if (!isNaN(date)) {
-        item.setAttribute('data-date', date.toISOString().split('T')[0]);
-      } else {
-        console.error('Invalid date for item:', dateValue);
+    const container = document.querySelector('.blog-side-by-side-wrapper') || blogItems[0].parentElement;
+
+    // Tag items with categories, title, date
+    blogItems.forEach(item => {
+      const cats = Array.from(item.querySelectorAll('.blog-categories-list a')).map(cat => getSlug(cat.textContent));
+      item.setAttribute('data-category', cats.join(' '));
+
+      const title = item.querySelector('.blog-title');
+      if (title) item.setAttribute('data-name', title.textContent.trim());
+
+      const dateElem = item.querySelector('time[pubdate]');
+      if (dateElem) {
+        const dateValue = dateElem.getAttribute('datetime') || dateElem.textContent.trim();
+        const date = new Date(dateValue);
+        if (!isNaN(date)) item.setAttribute('data-date', date.toISOString().split('T')[0]);
       }
-    } else {
-      console.warn('Missing time element with pubdate for item:', item);
-    }
-  });
-
-  // Filtering function: show items that match any active filter
-  function updateItemVisibility() {
-    var activeFilters = Array.from(document.querySelectorAll('.filter-button.active')).map(function(button) {
-      return button.textContent.trim().replace(/\s+/g, '-').toLowerCase().replace(/[^a-z0-9-_]/g, '');
     });
-    blogItems.forEach(function(item) {
-      if (activeFilters.length === 0) {
-        item.classList.remove('hidden');
-      } else {
-        var itemCategories = item.getAttribute('data-category').split(' ');
-        var match = activeFilters.some(function(filter) {
-          return itemCategories.indexOf(filter) !== -1;
-        });
-        if (match) {
-          item.classList.remove('hidden');
+
+    const sortItems = (sortBy = 'date', asc = false) => {
+      const items = Array.from(document.querySelectorAll('.blog-item'));
+      items.sort((a, b) => {
+        const aVal = a.getAttribute(`data-${sortBy}`) || '';
+        const bVal = b.getAttribute(`data-${sortBy}`) || '';
+
+        if (sortBy === 'date') {
+          return asc ? new Date(aVal) - new Date(bVal) : new Date(bVal) - new Date(aVal);
         } else {
-          item.classList.add('hidden');
+          return asc ? aVal.localeCompare(bVal) : bVal.localeCompare(aVal);
         }
-      }
-    });
-  }
-
-  // Sorting function
-  function sortItems(sortBy, sortAscending) {
-    var itemsArray = Array.from(blogItems);
-    itemsArray.sort(function(a, b) {
-      var aVal = a.getAttribute('data-' + sortBy) || '';
-      var bVal = b.getAttribute('data-' + sortBy) || '';
-      if (sortBy === 'date') {
-        var aDate = new Date(aVal);
-        var bDate = new Date(bVal);
-        return sortAscending ? aDate - bDate : bDate - aDate;
-      } else {
-        return sortAscending ? aVal.localeCompare(bVal) : bVal.localeCompare(aVal);
-      }
-    });
-    // Re-append sorted items to the container
-    itemsArray.forEach(function(item) {
-      container.appendChild(item);
-    });
-  }
-
-  // Default sort: date descending (newest first)
-  sortItems('date', false);
-
-  // Filter button click: toggle active class and update filtering
-  document.querySelectorAll('.filter-button').forEach(function(button) {
-    button.addEventListener('click', function() {
-      this.classList.toggle('active');
-      updateItemVisibility();
-    });
-  });
-
-  // Reset button handler
-  var resetButton = document.getElementById('reset');
-  if (resetButton) {
-    resetButton.addEventListener('click', function() {
-      document.querySelectorAll('.filter-button').forEach(function(btn) {
-        btn.classList.remove('active');
       });
-      var selectTrigger = document.querySelector('.select-trigger');
-      if (selectTrigger) {
-        selectTrigger.textContent = 'Sort Collection';
+      items.forEach(item => container.appendChild(item));
+    };
+
+    const updateItemVisibility = () => {
+      const active = Array.from(document.querySelectorAll('.filter-button.active')).map(btn => btn.getAttribute('data-filter'));
+      document.querySelectorAll('.blog-item').forEach(item => {
+        const cats = item.getAttribute('data-category')?.split(' ') || [];
+        const matches = active.some(f => cats.includes(f));
+        item.classList.toggle('hidden', active.length > 0 && !matches);
+      });
+      updateURL(active);
+    };
+
+    const updateURL = (filters) => {
+      const params = new URLSearchParams(window.location.search);
+      if (filters.length > 0) {
+        params.set('category-filter', filters.join(','));
+      } else {
+        params.delete('category-filter');
       }
+      const newURL = `${window.location.pathname}?${params.toString()}`;
+      history.replaceState({}, '', newURL);
+    };
+
+    document.addEventListener('click', function (e) {
+      if (e.target.classList.contains('filter-button') && e.target.id !== 'reset') {
+        e.target.classList.toggle('active');
+        updateItemVisibility();
+      }
+    });
+
+    document.querySelector('#reset')?.addEventListener('click', () => {
+      document.querySelectorAll('.filter-button').forEach(btn => btn.classList.remove('active'));
       updateItemVisibility();
       sortItems('date', false);
+      if (trigger) trigger.textContent = 'Sort Collection';
     });
-  }
 
-  // Dropdown sorting logic
-  var selectWrap = document.getElementById('filter-select-wrap');
-  if (selectWrap) {
-    var selectTrigger = selectWrap.querySelector('.select-trigger');
-    var options = selectWrap.querySelectorAll('.option');
-
-    selectTrigger.addEventListener('click', function(e) {
-      e.stopPropagation();
+    trigger?.addEventListener('click', () => {
       selectWrap.classList.toggle('open');
-      var filterSelect = selectWrap.querySelector('.filter-select');
-      if (filterSelect) {
-        filterSelect.style.display = selectWrap.classList.contains('open') ? 'block' : 'none';
-      }
+      const dropdown = selectWrap.querySelector('.filter-select');
+      if (dropdown) dropdown.style.display = selectWrap.classList.contains('open') ? 'block' : 'none';
     });
 
-    options.forEach(function(option) {
-      option.addEventListener('click', function() {
-        selectTrigger.textContent = this.textContent;
+    options?.forEach(option => {
+      option.addEventListener('click', function () {
+        const value = this.getAttribute('value');
+        const [sortBy, order] = value.split(':');
+        const asc = (order === 'asc' && sortBy !== 'posts') || (sortBy === 'posts' && order === 'old');
+        if (trigger) trigger.textContent = this.textContent;
+        sortItems(sortBy === 'posts' ? 'date' : sortBy, asc);
         selectWrap.classList.remove('open');
-        var filterSelect = selectWrap.querySelector('.filter-select');
-        if (filterSelect) {
-          filterSelect.style.display = 'none';
-        }
-        var sortByValue = this.getAttribute('value');
-        var parts = sortByValue.split(':');
-        var sortBy = parts[0];
-        var order = parts[1];
-        // The condition below is based on your original logic. Adjust as needed.
-        var sortAscending = (order === 'asc' && sortBy !== 'posts') || (sortBy === 'posts' && order === 'old');
-        sortItems(sortBy === 'posts' ? 'date' : sortBy, sortAscending);
+        const dropdown = selectWrap.querySelector('.filter-select');
+        if (dropdown) dropdown.style.display = 'none';
       });
     });
 
-    // Close dropdown if clicking outside of it
-    document.addEventListener('click', function(e) {
+    document.addEventListener('click', e => {
       if (!selectWrap.contains(e.target)) {
         selectWrap.classList.remove('open');
-        var filterSelect = selectWrap.querySelector('.filter-select');
-        if (filterSelect) {
-          filterSelect.style.display = 'none';
-        }
+        const dropdown = selectWrap.querySelector('.filter-select');
+        if (dropdown) dropdown.style.display = 'none';
       }
     });
-  }
+
+    const params = new URLSearchParams(window.location.search);
+    const categoryParam = params.get('category-filter');
+    if (categoryParam) {
+      const slugs = categoryParam.split(',').map(getSlug);
+      slugs.forEach(slug => {
+        const match = document.querySelector(`.filter-button[data-filter="${slug}"]`);
+        if (match) match.classList.add('active');
+      });
+    }
+
+    updateItemVisibility();
+    sortItems('date', false);
+  });
 });
