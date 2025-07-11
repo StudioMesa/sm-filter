@@ -1,150 +1,148 @@
-/*SM Filter — Updated 10/30/24*/
+/*SM Filter — Updated 07/11/25*/
 
-document.addEventListener("DOMContentLoaded", function() {
-    // Dynamically create filter buttons based on archive links
-    var archiveLinks = document.querySelectorAll('.archive-block-wrapper .archive-group-name-link');
-    var buttonWrap = document.getElementById('button-wrap');
-    archiveLinks.forEach(function(link) {
-      var text = link.textContent.trim();
+document.addEventListener("DOMContentLoaded", function () {
+  window.addEventListener("load", function () {
+    const getSlug = str =>
+      str.trim().replace(/\s+/g, '-').toLowerCase().replace(/[^a-z0-9-_]/g, '');
+
+    const buttonWrap = document.getElementById('button-wrap');
+    const archiveLinks = document.querySelectorAll('.archive-block-wrapper .archive-group-name-link');
+    const grid = document.querySelector('.blog-basic-grid');
+    const select = document.getElementById('filter-select-wrap');
+    const trigger = select?.querySelector('.select-trigger');
+    const options = select?.querySelectorAll('.option');
+
+    // 1. Create filter buttons
+    archiveLinks.forEach(link => {
+      const text = link.textContent.trim();
       if (text) {
-        var button = document.createElement('div');
+        const button = document.createElement('div');
         button.className = 'filter-button';
         button.textContent = text;
+        button.setAttribute('data-filter', getSlug(text));
         buttonWrap.appendChild(button);
       }
     });
 
-    // Initialize data attributes on items
+    // 2. Tag blog items
     document.querySelectorAll('.blog-basic-grid--container').forEach(item => {
-      // Collect all categories for the item
       const categories = [];
-      item.querySelectorAll('.blog-categories-list a').forEach(categoryElement => {
-        const category = categoryElement.textContent.trim()
-          .replace(/\s+/g, '-')
-          .toLowerCase()
-          .replace(/[^a-z0-9-_]/g, '');
-        categories.push(category);
+      item.querySelectorAll('.blog-categories-list a').forEach(cat => {
+        categories.push(getSlug(cat.textContent));
       });
-      // Set data-category attribute with all categories
       item.setAttribute('data-category', categories.join(' '));
 
-      // Assuming there's a title element with a class of 'blog-title'
-      const titleElement = item.querySelector('.blog-title');
-      if (titleElement) {
-        const title = titleElement.textContent.trim();
-        item.setAttribute('data-name', title);
-      } else {
-        console.warn('Missing .blog-title element for item:', item);
-      }
+      const title = item.querySelector('.blog-title');
+      if (title) item.setAttribute('data-name', title.textContent.trim());
 
-      // Extract the date from the 'pubdate' attribute
-      const dateElement = item.querySelector('time[pubdate]');
-      if (dateElement) {
-        const dateText = dateElement.textContent.trim();
-        const date = new Date(dateText);
-        if (!isNaN(date)) {
-          item.setAttribute('data-date', date.toISOString().split('T')[0]); // Format date as yyyy-mm-dd
-        } else {
-          console.error(`Invalid date: ${dateText}`);
-        }
-      } else {
-        console.warn('Missing pubdate element for item:', item);
+      const date = item.querySelector('time[pubdate]');
+      if (date) {
+        const d = new Date(date.textContent.trim());
+        if (!isNaN(d)) item.setAttribute('data-date', d.toISOString().split('T')[0]);
       }
     });
 
-    // Function to update item visibility based on active filters
-    const updateItemVisibility = () => {
-      const activeFilters = Array.from(document.querySelectorAll('.filter-button.active')).map(button => 
-        button.textContent.trim().replace(/\s+/g, '-').toLowerCase().replace(/[^a-z0-9-_]/g, '')
-      );
-
-      document.querySelectorAll('.blog-basic-grid--container').forEach(item => {
-        if (activeFilters.length === 0) {
-          item.classList.remove('hidden');
-        } else {
-          const itemCategories = item.getAttribute('data-category').split(' ');
-          const matches = activeFilters.some(filter => itemCategories.includes(filter));
-          if (matches) {
-            item.classList.remove('hidden');
-          } else {
-            item.classList.add('hidden');
-          }
-        }
-      });
-    };
-
-    // Function to sort items
-    const sortItems = (sortBy, sortAscending) => {
+    // 3. Sort items
+    const sortItems = (sortBy = 'date', asc = false) => {
       const items = Array.from(document.querySelectorAll('.blog-basic-grid--container'));
       items.sort((a, b) => {
-        const aValue = a.getAttribute(`data-${sortBy}`) || '';
-        const bValue = b.getAttribute(`data-${sortBy}`) || '';
+        const aVal = a.getAttribute(`data-${sortBy}`) || '';
+        const bVal = b.getAttribute(`data-${sortBy}`) || '';
 
-        if (sortBy === 'date') { // Sort by date
-          if (!aValue || !bValue) return 0;
-          const aDate = new Date(aValue);
-          const bDate = new Date(bValue);
-          return sortAscending ? aDate - bDate : bDate - aDate;
-        } else { // Sort by name
-          return sortAscending ? aValue.localeCompare(bValue) : bValue.localeCompare(aValue);
+        if (sortBy === 'date') {
+          return asc ? new Date(aVal) - new Date(bVal) : new Date(bVal) - new Date(aVal);
+        } else {
+          return asc ? aVal.localeCompare(bVal) : bVal.localeCompare(aVal);
         }
       });
-
-      // Re-append sorted items
-      const grid = document.querySelector('.blog-basic-grid');
       items.forEach(item => grid.appendChild(item));
     };
 
-    // Initial default sort - Date (New)
-    sortItems('date', false);
+    sortItems('date', false); // Default sort
 
-    // Filter button click handler
-    document.querySelectorAll('.filter-button').forEach(button => {
-      button.addEventListener('click', function() {
-        this.classList.toggle('active');
-        updateItemVisibility();
+    // 4. Update visible items
+    const updateItemVisibility = () => {
+      const activeFilters = Array.from(document.querySelectorAll('.filter-button.active'))
+        .map(btn => btn.getAttribute('data-filter'));
+
+      document.querySelectorAll('.blog-basic-grid--container').forEach(item => {
+        const itemCategories = item.getAttribute('data-category')?.split(' ') || [];
+        const matches = activeFilters.some(f => itemCategories.includes(f));
+        item.classList.toggle('hidden', activeFilters.length > 0 && !matches);
       });
+
+      updateURL(activeFilters);
+    };
+
+    // 5. Update the URL with active filters
+    const updateURL = (filters) => {
+      const params = new URLSearchParams(window.location.search);
+      if (filters.length > 0) {
+        params.set('category-filter', filters.join(','));
+      } else {
+        params.delete('category-filter');
+      }
+      const newURL = `${window.location.pathname}?${params.toString()}`;
+      history.replaceState({}, '', newURL);
+    };
+
+    // 6. Click filter buttons (multi-select)
+    document.addEventListener('click', function (e) {
+      if (e.target.classList.contains('filter-button') && e.target.id !== 'reset') {
+        e.target.classList.toggle('active');
+        updateItemVisibility();
+      }
     });
 
-    // Reset button click handler
-    document.querySelector('#reset').addEventListener('click', () => {
+    // 7. Reset button
+    document.querySelector('#reset')?.addEventListener('click', () => {
       document.querySelectorAll('.filter-button').forEach(btn => btn.classList.remove('active'));
-      document.querySelector('.select-trigger').textContent = 'Sort Collection';
       updateItemVisibility();
-      sortItems('date', false); // Default sort order
+      sortItems('date', false);
+      trigger.textContent = 'Sort Collection';
     });
 
-    // Dropdown interaction and sorting
-    const select = document.getElementById('filter-select-wrap');
-    const trigger = select.querySelector('.select-trigger');
-    const options = select.querySelectorAll('.option');
-
-    // Toggle dropdown
-    trigger.addEventListener('click', function() {
+    // 8. Dropdown toggle
+    trigger?.addEventListener('click', () => {
       select.classList.toggle('open');
-      select.querySelector('.filter-select').style.display = select.classList.contains('open') ? 'block' : 'none';
+      const dropdown = select.querySelector('.filter-select');
+      dropdown.style.display = select.classList.contains('open') ? 'block' : 'none';
     });
 
-    // Option click
-    options.forEach(option => {
-      option.addEventListener('click', function() {
+    // 9. Sort option click
+    options?.forEach(option => {
+      option.addEventListener('click', function () {
+        const value = this.getAttribute('value');
+        const [sortBy, order] = value.split(':');
+        const asc = (order === 'asc' && sortBy !== 'posts') || (sortBy === 'posts' && order === 'old');
+
         trigger.textContent = this.textContent;
+        sortItems(sortBy === 'posts' ? 'date' : sortBy, asc);
+
         select.classList.remove('open');
         select.querySelector('.filter-select').style.display = 'none';
-
-        const sortByValue = this.getAttribute('value');
-        const [sortBy, order] = sortByValue.split(':');
-        const sortAscending = (order === 'asc' && sortBy !== 'posts') || (sortBy === 'posts' && order === 'old');
-
-        sortItems(sortBy === 'posts' ? 'date' : sortBy, sortAscending);
       });
     });
 
-    // Click outside to close dropdown
-    document.addEventListener('click', function(e) {
+    // 10. Close dropdown on outside click
+    document.addEventListener('click', function (e) {
       if (!select.contains(e.target)) {
         select.classList.remove('open');
         select.querySelector('.filter-select').style.display = 'none';
       }
     });
+
+    // 11. Load filters from URL (multi)
+    const params = new URLSearchParams(window.location.search);
+    const categoryParam = params.get('category-filter');
+    if (categoryParam) {
+      const slugs = categoryParam.split(',').map(getSlug);
+      slugs.forEach(slug => {
+        const match = document.querySelector(`.filter-button[data-filter="${slug}"]`);
+        if (match) match.classList.add('active');
+      });
+    }
+
+    updateItemVisibility(); // Initial visibility
+  });
 });
