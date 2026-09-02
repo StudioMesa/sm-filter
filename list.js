@@ -1,24 +1,34 @@
 /*!
- * SM Filter — collection
- * Server-backed category filtering for Squarespace blog collections.
+
+V3
+
+ * SM Filter — list
+ * Category filtering for Squarespace blog collections, without page reloads.
  *
- * Any link pointing at the current collection path becomes an instant filter:
- * the category pills already printed on each post, a hand-written row of
- * buttons, an inline text link, anything. No archive block, no category
- * source to configure, nothing that deselects when a site is duplicated.
+ * Triggers are authored by NAME, not by URL:
  *
- * Filtering is done by Squarespace, not in the browser, so it covers every
- * post in the collection and not just the ones currently loaded. That means it
- * stays correct alongside paginated "load more".
+ *   <div class="sm-cats">
+ *     <a href="#" data-category="">All</a>
+ *     <a href="#" data-category="Opinion">Opinion</a>
+ *     <a href="#" data-category="Essay">Essay</a>
+ *   </div>
+ *
+ * The script builds the request URL itself, so there is no path to match and
+ * nothing to keep in sync if the blog moves. Squarespace's own category pills
+ * work as triggers too: only the category name is read off them, never the URL.
+ *
+ * Filtering happens on the server, so it covers every post in the collection,
+ * not just the ones currently loaded. That keeps it correct alongside a
+ * paginated "load more".
  *
  * Usage (Settings > Advanced > Code Injection > Footer):
- *   <script src="https://cdn.jsdelivr.net/gh/StudioMesa/sm-filter@main/collection.js" defer></script>
+ *   <script src="https://cdn.jsdelivr.net/gh/StudioMesa/sm-filter@main/list.js" defer></script>
  *
  * Optional config, declared BEFORE the script tag:
- *   <script>window.SM_FILTER = { clearLabel: 'Show all' };</script>
+ *   <script>window.SM_FILTER = { history: false };</script>
  *
- * Fires `sm:list-replaced` on document after each swap, so a pagination
- * script can rebind. Degrades to ordinary navigation on any failure.
+ * Fires `sm:list-replaced` on document after each swap so a pagination script
+ * can rebind. Falls back to ordinary navigation if a fetch fails.
  */
 (function () {
   'use strict';
@@ -26,8 +36,10 @@
   var DEFAULTS = {
     list: '.collection-content-wrapper',
     param: 'category',
-    clearBar: true,
-    clearLabel: 'Clear',
+    trigger: '[data-category]',
+    activeClass: 'is-active',
+    pills: true,        // treat Squarespace's own category pills as triggers
+    history: true,      // update the address bar so filters are shareable
     scroll: true,
     debug: false
   };
@@ -37,7 +49,7 @@
   var user = window.SM_FILTER || {};
   for (k in user) if (Object.prototype.hasOwnProperty.call(user, k)) cfg[k] = user[k];
 
-  var BASE = location.pathname;
+  var PILL = 'a[href*="' + cfg.param + '="]';
   var list, listIndex, busy = false;
 
   function all(root, sel) { return [].slice.call(root.querySelectorAll(sel)); }
@@ -46,13 +58,25 @@
     if (cfg.debug && window.console) console.log.apply(console, ['[sm-filter]'].concat([].slice.call(arguments)));
   }
 
-  function current() {
+  function active() {
     return new URLSearchParams(location.search).get(cfg.param) || '';
+  }
+
+  /* The one place a URL is constructed. Everything else deals in names. */
+  function urlFor(cat) {
+    return location.pathname + (cat ? '?' + cfg.param + '=' + encodeURIComponent(cat) : '');
+  }
+
+  function catOf(el) {
+    if (el.hasAttribute('data-category')) return el.getAttribute('data-category') || '';
+    try {
+      return new URL(el.href, location.href).searchParams.get(cfg.param) || '';
+    } catch (e) { return ''; }
   }
 
   function clean(node) {
     // Squarespace's animation observer runs once at load, so nodes added later
-    // never get observed and can sit at opacity 0 forever.
+    // are never observed and can sit at opacity 0 forever.
     node.removeAttribute('data-animation-role');
     all(node, '[data-animation-role]').forEach(function (n) { n.removeAttribute('data-animation-role'); });
     return node;
@@ -69,65 +93,25 @@
     try { window.dispatchEvent(new Event('resize')); } catch (e) {}
   }
 
-  /* Mark filter links outside the list. Pills inside it are skipped: when a
-     filter is active every visible row shares that category, so lighting them
-     all up is noise. */
+  /* Mark triggers outside the list. Pills inside it are skipped: once a filter
+     is on, every visible row shares that category, so lighting them all is noise. */
   function mark() {
-    var active = current();
-    all(document, 'a[href]').forEach(function (a) {
-      if (list.contains(a)) return;
-
-      var u;
-      try { u = new URL(a.href, location.href); } catch (e) { return; }
-      if (u.origin !== location.origin || u.pathname !== BASE) return;
-      if ((a.getAttribute('href') || '').indexOf('offset=') !== -1) return;
-
-      if ((u.searchParams.get(cfg.param) || '') === active) {
-        a.classList.add('sm-filter--active');
-        a.setAttribute('aria-current', 'page');
-      } else {
-        a.classList.remove('sm-filter--active');
-        a.removeAttribute('aria-current');
-      }
+    var cur = active();
+    all(document, cfg.trigger).forEach(function (el) {
+      if (list && list.contains(el)) return;
+      var on = catOf(el) === cur;
+      el.classList[on ? 'add' : 'remove'](cfg.activeClass);
+      if (on) el.setAttribute('aria-current', 'page');
+      else el.removeAttribute('aria-current');
     });
   }
 
-  /* Shown only while a filter is active, so the default view stays clean. */
-  function bar() {
-    if (!cfg.clearBar) return;
-
-    var cat = current();
-    var existing = document.querySelector('.sm-filter-bar');
-
-    if (!cat) {
-      if (existing) existing.parentNode.removeChild(existing);
-      return;
-    }
-
-    var el = existing || document.createElement('div');
-    el.className = 'sm-filter-bar';
-    while (el.firstChild) el.removeChild(el.firstChild);
-
-    var label = document.createElement('span');
-    label.className = 'sm-filter-bar__label';
-    label.textContent = cat;   // textContent, never innerHTML: this came from the URL
-
-    var clear = document.createElement('a');
-    clear.className = 'sm-filter-bar__clear';
-    clear.href = BASE;
-    clear.textContent = cfg.clearLabel;
-
-    el.appendChild(label);
-    el.appendChild(clear);
-
-    if (!existing) list.parentNode.insertBefore(el, list);
-  }
-
-  function go(url, push) {
+  function go(cat, push) {
     if (busy) return;
+    var url = urlFor(cat);
     busy = true;
     list.classList.add('is-filtering');
-    log('fetching', url);
+    log('filtering to', cat || '(all)', url);
 
     fetch(url, { credentials: 'same-origin' })
       .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.text(); })
@@ -137,13 +121,33 @@
         var fresh = lists[listIndex] || lists[0];
         if (!fresh) throw new Error('no list in fetched page');
 
-        if (push) history.pushState({ sm: 1 }, '', url);
+        if (cfg.history && push) history.pushState({ smCat: cat }, '', url);
 
         while (list.firstChild) list.removeChild(list.firstChild);
         [].slice.call(fresh.children).forEach(function (node) {
           list.appendChild(clean(document.importNode(node, true)));
         });
         hydrate(list);
-
-        bar();
         mark();
+
+        busy = false;
+        list.classList.remove('is-filtering');
+
+        try {
+          document.dispatchEvent(new CustomEvent('sm:list-replaced', {
+            detail: { list: list, category: cat, url: url }
+          }));
+        } catch (e) { log('event failed', e); }
+
+        if (cfg.scroll && list.getBoundingClientRect().top < 0) {
+          var reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+          list.scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'start' });
+        }
+      })
+      .catch(function (err) {
+        log('failed, navigating', err);
+        location.href = url;
+      });
+  }
+
+  function onClick(e) {
