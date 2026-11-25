@@ -1,4 +1,4 @@
-/*SM Filter — Updated 07/11/25*/
+/*SM Filter, side by side — Updated 11/25/26 (categories no longer need an Archive Block)*/
 
 document.addEventListener("DOMContentLoaded", function () {
   window.addEventListener("load", function () {
@@ -11,17 +11,75 @@ document.addEventListener("DOMContentLoaded", function () {
     const trigger = selectWrap?.querySelector('.select-trigger');
     const options = selectWrap?.querySelectorAll('.option');
 
-    // Create filter buttons
-    archiveLinks.forEach(link => {
-      const text = link.textContent.trim();
-      if (text) {
+    // Category names for the buttons. An Archive Block is used when it has
+    // links (sites set up that way keep working unchanged). Without one, or
+    // when it comes up empty after a site is duplicated, the names are read
+    // from the posts on the page. If the posts do not show their categories,
+    // the collection's own data is asked for them as a last resort.
+    const addButtons = names => {
+      if (!buttonWrap) return;
+      names.forEach(text => {
         const button = document.createElement('div');
         button.className = 'filter-button';
         button.textContent = text;
         button.setAttribute('data-filter', getSlug(text));
         buttonWrap.appendChild(button);
-      }
-    });
+      });
+    };
+
+    const uniqueSorted = list => {
+      const seen = {};
+      return list
+        .map(t => (t || '').trim())
+        .filter(t => t && getSlug(t) && !seen[getSlug(t)] && (seen[getSlug(t)] = true))
+        .sort((a, b) => a.localeCompare(b));
+    };
+
+    const namesFromArchive = () =>
+      Array.from(archiveLinks).map(l => l.textContent.trim()).filter(Boolean);
+
+    const namesFromPosts = () =>
+      uniqueSorted(Array.from(document.querySelectorAll('.blog-item .blog-categories-list a')).map(a => a.textContent));
+
+    const namesFromCollection = () =>
+      fetch(window.location.pathname + '?format=json', { credentials: 'same-origin' })
+        .then(r => (r.ok ? r.json() : null))
+        .then(data => {
+          const found = [];
+          const posts = (data && data.items) || [];
+          document.querySelectorAll('.blog-item').forEach(item => {
+            const hrefs = Array.from(item.querySelectorAll('a[href]')).map(a => a.getAttribute('href'));
+            const post = posts.find(p => p.fullUrl && hrefs.indexOf(p.fullUrl) !== -1);
+            const cats = (post && post.categories) || [];
+            if (!cats.length) return;
+            item.setAttribute('data-category', cats.map(getSlug).join(' '));
+            cats.forEach(c => found.push(c));
+          });
+          return uniqueSorted(found);
+        })
+        .catch(() => []);
+
+    const initialFilter = new URLSearchParams(window.location.search).get('category-filter');
+    const applyURLFilters = () => {
+      if (!initialFilter) return;
+      initialFilter.split(',').map(getSlug).forEach(slug => {
+        if (!slug) return;
+        const match = document.querySelector(`.filter-button[data-filter="${slug}"]`);
+        if (match) match.classList.add('active');
+      });
+    };
+
+    let names = namesFromArchive();
+    if (!names.length) names = namesFromPosts();
+    addButtons(names);
+    if (!names.length && buttonWrap && document.querySelector('.blog-item')) {
+      namesFromCollection().then(found => {
+        if (!found.length) return;
+        addButtons(found);
+        applyURLFilters();
+        updateItemVisibility();
+      });
+    }
 
     const blogItems = document.querySelectorAll('.blog-item');
     if (!blogItems.length) return;
@@ -121,15 +179,7 @@ document.addEventListener("DOMContentLoaded", function () {
       }
     });
 
-    const params = new URLSearchParams(window.location.search);
-    const categoryParam = params.get('category-filter');
-    if (categoryParam) {
-      const slugs = categoryParam.split(',').map(getSlug);
-      slugs.forEach(slug => {
-        const match = document.querySelector(`.filter-button[data-filter="${slug}"]`);
-        if (match) match.classList.add('active');
-      });
-    }
+    applyURLFilters();
 
     updateItemVisibility();
     sortItems('date', false);
